@@ -402,6 +402,7 @@ class BookTrans(BaseHandler):
         self.set_status(401)
         raise web.Finish()
 
+    @js
     def get(self, id, fmt):
         is_opds = self.get_argument("from", "") == "opds"
         if not CONF["ALLOW_GUEST_DOWNLOAD"] and not self.current_user:
