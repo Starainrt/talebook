@@ -36,9 +36,6 @@
                         </v-list-item-action>
                     </v-list-item>
                 </template>
-                <v-list-item>
-                    <v-img class='ma-auto' max-width=128 src="img/link.png"></v-img>
-                </v-list-item>
             </v-list>
         </v-navigation-drawer>
 
