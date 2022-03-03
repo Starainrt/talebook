@@ -85,6 +85,10 @@ class Reader(Base, SQLAlchemyMixin):
     OVERSIZE_SHRINK_RATE = 0.8
     SQLITE_MAX_LENGTH = 32 * 1024.0
 
+    RE_EMAIL = r"[^@]+@[^@]+\.[^@]+"
+    RE_USERNAME = r"[a-z][a-z0-9_]*"
+    RE_PASSWORD = r'[a-zA-Z0-9!@#$%^&*()_+\-=[\]{};\':",./<>?\|]*'
+
     __tablename__ = "readers"
     id = Column(Integer, primary_key=True)
     username = Column(String(200))
@@ -136,7 +140,7 @@ class Reader(Base, SQLAlchemyMixin):
 
     def reset_password(self):
         s = "%s%s%s" % (self.username, self.create_time.strftime("%s"), time.time())
-        p = hashlib.md5(s).hexdigest()[:16]
+        p = hashlib.md5(s.encode("UTF-8")).hexdigest()[:16]
         self.set_secure_password(p)
         return p
 

@@ -1,7 +1,7 @@
 <template>
     <div>
         <v-btn bottom color="pink" dark fab fixed right @click="dialog = !dialog" >
-            <v-icon>mdi-plus</v-icon>
+            <v-icon>mdi-upload</v-icon>
         </v-btn>
         <v-dialog v-model="dialog" persistent transition="dialog-bottom-transition" width="300">
             <v-card>
@@ -39,18 +39,18 @@ export default {
             this.loading = true;
             var data = new FormData();
             data.append("ebook", this.ebooks);
-            this.backend("/book/upload", {
+            this.$backend("/book/upload", {
                 method: 'POST',
                 body: data,
             })
             .then( rsp => {
                 this.dialog = false;
                 if ( rsp.err == 'ok' ) {
-                    this.alert("success", "上传成功！", "/book/"+rsp.book_id);
+                    this.$alert("success", "上传成功！", "/book/"+rsp.book_id);
                 } else if ( rsp.err == 'samebook' ) {
-                    this.alert("error", rsp.msg, "/book/"+rsp.book_id);
+                    this.$alert("error", rsp.msg, "/book/"+rsp.book_id);
                 } else {
-                    this.alert("error", rsp.msg);
+                    this.$alert("error", rsp.msg);
                 }
             })
             .finally(() => {
