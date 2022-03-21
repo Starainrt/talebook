@@ -4,7 +4,6 @@
 import datetime
 import hashlib
 import logging
-import os
 import re
 import ssl
 import subprocess
@@ -183,7 +182,6 @@ class AdminSettings(BaseHandler):
         if not self.admin_user:
             return {"err": "permission", "msg": _(u"无权访问此接口")}
 
-        site_url = self.request.protocol + "://" + self.request.host
         sns = [
             {"value": "qq", "text": "QQ", "link": "https://connect.qq.com/"},
             {
@@ -207,7 +205,7 @@ class AdminSettings(BaseHandler):
                 "link": "https://developers.weixin.qq.com/doc/offiaccount/OA_Web_Apps/Wechat_webpage_authorization.html",
             },
         ]
-        return {"err": "ok", "settings": CONF, "sns": sns, "site_url": site_url}
+        return {"err": "ok", "settings": CONF, "sns": sns, "site_url": self.site_url}
 
     @js
     @auth
@@ -320,7 +318,6 @@ class AdminInstall(BaseHandler):
 
         # inherit the basic path from system's config
         args['settings_path'] = CONF['settings_path']
-
 
         # set options for China user
         # TODO: maybe it should be provided as an install options

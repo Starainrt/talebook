@@ -10,7 +10,6 @@ import os
 import time
 from collections import defaultdict
 from gettext import gettext as _
-from urllib.parse import urlparse
 
 from jinja2 import Environment, FileSystemLoader
 from sqlalchemy import func as sql_func
@@ -139,7 +138,22 @@ class BaseHandler(web.RequestHandler):
             self.set_status(200)
             raise web.Finish()
 
+    def set_hosts(self):
+        # site_url为完整路径，用于发邮件等
+        host = self.request.headers.get("X-Forwarded-Host", self.request.host)
+        self.site_url = self.request.protocol + "://" + host
+
+        # 默认情况下，访问站内资源全部采用相对路径
+        self.api_url = ""   # API动态请求地址
+        self.cdn_url = ""   # 可缓存的资源，图片，文件
+
+        # 如果设置有static_host配置，则改为绝对路径
+        if CONF["static_host"]:
+            self.api_url = self.request.protocol + "://" + host
+            self.cdn_url = self.request.protocol + "://" + CONF["static_host"]
+
     def prepare(self):
+        self.set_hosts()
         self.set_i18n()
         self.process_auth_header()
         self.should_be_installed()
@@ -164,16 +178,7 @@ class BaseHandler(web.RequestHandler):
         self.build_time = self.settings["build_time"]
         self.default_cover = self.settings["default_cover"]
         self.admin_user = None
-        self.static_host = CONF.get("static_host", "")
         self.cookies_cache = {}
-        if self.static_host:
-            self.static_host = self.request.protocol + "://" + self.static_host
-
-        host = CONF.get("static_host", "")
-        if not host:
-            host = self.request.host
-        self.cdn_url = self.request.protocol + "://" + host
-        self.base_url = self.request.protocol + "://" + self.request.host
 
     def on_finish(self):
         ScopedSession = self.settings["ScopedSession"]
@@ -349,7 +354,7 @@ class BaseHandler(web.RequestHandler):
             "count_hot_users": self.session.query(sql_func.count(Reader.id))
             .filter(Reader.access_time > last_week)
             .scalar(),
-            "IMG": self.static_host,
+            "IMG": self.cdn_url,
             "SITE_TITLE": CONF["site_title"],
         }
         vals = dict(*args, **kwargs)
@@ -459,13 +464,6 @@ class BaseHandler(web.RequestHandler):
 
     def get_path_progress(self, book_id):
         return os.path.join(CONF["progress_path"], "progress-%s.log" % book_id)
-
-    def get_save_referer(self, default="/"):
-        referer = self.request.headers.get("referer", default)
-        parts = urlparse(referer)
-        if parts.netloc != self.request.host:
-            return default
-        return referer
 
     def create_mail(self, sender, to, subject, body, attachment_data, attachment_name):
         from email.header import Header
@@ -618,6 +616,6 @@ class ListHandler(BaseHandler):
             "language": get("language", None),
             "isbn": get("isbn", None),
             "img": self.cdn_url + "/get/cover/%(id)s.jpg?t=%(timestamp)s" % b,
-            "author_url": self.base_url + "/author/" + author_sort,
-            "publisher_url": self.base_url + "/publisher/" + pub,
+            "author_url": self.api_url + "/author/" + author_sort,
+            "publisher_url": self.api_url + "/publisher/" + pub,
         }
