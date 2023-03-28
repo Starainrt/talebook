@@ -5,7 +5,7 @@ IMAGE := talebook/talebook:$(VER)
 REPO1 := talebook/talebook:latest
 REPO2 := talebook/calibre-webserver:latest
 
-all: build update
+all: build up
 
 build:
 	docker build --no-cache=false --build-arg BUILD_COUNTRY=CN --build-arg GIT_VERSION=$(VER) \
@@ -22,7 +22,7 @@ docker-test:
 
 lint:
 	flake8 webserver --count --select=E9,F63,F7,F82 --show-source --statistics
-	flake8 webserver --count --exit-zero --statistics --config .style.yapf
+	flake8 webserver --count --statistics --config .style.yapf
 
 test: lint
 	pytest tests
@@ -35,5 +35,8 @@ testvv: testv
 	coverage html -d ".htmlcov" --include "*talebook*"
 	cd ".htmlcov" && python3 -m http.server 7777
 
-update:
-	docker-compose -f docker/docker-compose.yml up -d
+up:
+	docker-compose up -d
+
+down:
+	docker-compose stop

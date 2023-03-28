@@ -19,6 +19,7 @@ settings = {
     "progress_path" : "/data/books/progress/",
     "convert_path"  : "/data/books/convert/",
     "upload_path"   : "/data/books/upload/",
+    "scan_upload_path"   : "/data/books/imports/",
     "extract_path"  : "/data/books/extract/",
     "with_library"  : "/data/books/library/",
     "cookie_secret" : "cookie_secret",
@@ -28,6 +29,11 @@ settings = {
     "site_title"    : u"奇异书屋",
     "ssl_crt_file"  : "/data/books/ssl/ssl.crt",
     "ssl_key_file"  : "/data/books/ssl/ssl.key",
+
+    "push_title": u"%(site_title)s：推送给您一本书《%(title)s》",
+    "push_content": u"为您奉上一本《%(title)s》, 欢迎常来访问%(site_title)s！%(site_url)s",
+
+    "convert_timeout" : 300,
 
     # https://analytics.google.com/
     "google_analytics_id" : "G-LLF01B5ZZ8",
@@ -39,8 +45,14 @@ settings = {
     "opds_max_ungrouped_items" : 100,
     "opds_url_prefix"          : "",
 
+    "db_engine_args": {
+        "echo": False,
+    },
+
     # 100MB, tornado default max_buffer_size value
     "MAX_UPLOAD_SIZE": "100MB",
+
+    "PDF_VIEWER": "/static/pdfjs/web/viewer.html?file=%(pdf_url)s",
 
     "SOCIAL_AUTH_LOGIN_URL"          : '/',
     "SOCIAL_AUTH_LOGIN_REDIRECT_URL" : '/api/done/',
@@ -89,10 +101,10 @@ settings = {
     'FRIENDS': [
         { "text": u"芒果读书", "href": "http://diumx.com/" },
         { "text": u"鸠摩搜索", "href": "https://www.jiumodiary.com/" },
-        { "text": u"文渊阁",   "href": "https://wenyuange.org/" },
+        { "text": u"追更神器", "href": "https://github.com/hectorqin/reader" },
         { "text": u"阅读链",   "href": "https://www.yuedu.pro/" },
         { "text": u"苦瓜书盘", "href": "https://www.kgbook.com" },
-        { "text": u"三秋书屋", "href": "https://www.sanqiu.cc/" },        
+        { "text": u"三秋书屋", "href": "https://www.sanqiu.cc/" },
     ],
     'SOCIALS': [
     ],

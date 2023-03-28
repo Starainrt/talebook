@@ -13,9 +13,11 @@ import uuid
 from gettext import gettext as _
 
 import tornado
+
 from webserver import loader
-from webserver.handlers.base import BaseHandler, auth, js
+from webserver.handlers.base import BaseHandler, auth, js, is_admin
 from webserver.models import Reader
+from webserver.utils import SimpleBookFormatter
 
 CONF = loader.get_settings()
 
@@ -89,8 +91,20 @@ class AdminUsers(BaseHandler):
             return {"err": "params.user.not_exist", "msg": _(u"用户ID错误")}
         if "active" in data:
             user.active = data["active"]
+
         if "admin" in data:
             user.admin = data["admin"]
+
+        if user.admin is False and self.user_id() == user.id:
+            return {"err": "params.user.invalid", "msg": _("不允许取消自己的管理员权限")}
+
+        if data.get("delete", "") == user.username:
+            if self.user_id() == user.id:
+                return {"err": "params.user.invalid", "msg": _("不允许删除自己")}
+
+            self.session.query(Reader).filter(Reader.id == user.id).delete()
+            self.session.commit()
+            return {"err": "ok", "msg": _("删除成功")}
 
         p = data.get("permission", "")
         if not isinstance(p, str):
@@ -140,16 +154,16 @@ class AdminOwnerMode(BaseHandler):
         self.redirect("/", 302)
 
 
-class SettingsSaverLogic():
+class SettingsSaverLogic:
     def update_nuxtjs_env(self):
         # update nuxtjs .env file
-        nuxtjs_env = '''
+        nuxtjs_env = """
 TITLE="%(site_title)s"
 TITLE_TEMPLATE="%%s | %(site_title)s"
 GOOGLE_ANALYTICS_ID=%(google_analytics_id)s
 
-'''
-        with open(CONF['nuxt_env_path'], "w") as f:
+"""
+        with open(CONF["nuxt_env_path"], "w") as f:
             f.write(nuxtjs_env % CONF)
 
     def save_extra_settings(self, args):
@@ -230,9 +244,12 @@ class AdminSettings(BaseHandler):
             "SOCIALS",
             "autoreload",
             "cookie_secret",
+            "scan_upload_path",
             "douban_apikey",
             "douban_baseurl",
             "douban_max_count",
+            "push_title",
+            "push_content",
             "site_title",
             "smtp_password",
             "smtp_server",
@@ -241,7 +258,7 @@ class AdminSettings(BaseHandler):
             "xsrf_cookies",
             "settings_path",
             "avatar_service",
-            "google_analytics_id"
+            "google_analytics_id",
         ]
 
         args = loader.SettingsLoader()
@@ -296,33 +313,33 @@ class AdminInstall(BaseHandler):
             user = Reader()
             user.username = username
             user.name = username
-            user.email = email
-            user.avatar = CONF["avatar_service"] + "/avatar/" + hashlib.md5(email.encode("UTF-8")).hexdigest()
             user.create_time = datetime.datetime.now()
-            user.update_time = datetime.datetime.now()
-            user.access_time = datetime.datetime.now()
-            user.active = True
-            user.admin = True
-            user.extra = {"kindle_email": ""}
-            user.set_secure_password(password)
-            try:
-                user.save()
-            except:
-                import traceback
 
-                logging.error(traceback.format_exc())
-                return {"err": "db.error", "msg": _(u"系统异常，请重试或更换注册信息")}
+        # 设置admin user的信息
+        user.email = email
+        user.avatar = CONF["avatar_service"] + "/avatar/" + hashlib.md5(email.encode("UTF-8")).hexdigest()
+        user.update_time = datetime.datetime.now()
+        user.access_time = datetime.datetime.now()
+        user.active = True
+        user.admin = True
+        user.extra = {"kindle_email": ""}
+        user.set_secure_password(password)
+        try:
+            user.save()
+        except:
+            logging.error(traceback.format_exc())
+            return {"err": "db.error", "msg": _(u"系统异常，请重试或更换注册信息")}
 
         args = loader.SettingsLoader()
         args.clear()
 
         # inherit the basic path from system's config
-        args['settings_path'] = CONF['settings_path']
+        args["settings_path"] = CONF["settings_path"]
 
         # set options for China user
         # TODO: maybe it should be provided as an install options
-        args['avatar_service'] = 'https://cravatar.cn'
-        args['BOOK_NAMES_FORMAT'] = 'utf8'
+        args["avatar_service"] = "https://cravatar.cn"
+        args["BOOK_NAMES_FORMAT"] = "utf8"
 
         # set a random secret
         args["cookie_secret"] = u"%s" % uuid.uuid1()
@@ -419,6 +436,38 @@ class AdminSSL(BaseHandler):
         return logic.run(ssl_crt, ssl_key)
 
 
+class AdminBookList(BaseHandler):
+    @js
+    @is_admin
+    def get(self):
+        if not self.admin_user:
+            return {"err": "permission.not_admin", "msg": _(u"当前用户非管理员")}
+
+        num = max(10, int(self.get_argument("num", 20)))
+        page = max(0, int(self.get_argument("page", 1)) - 1)
+        sort = self.get_argument("sort", "id")
+        desc = self.get_argument("desc", "desc") == "true"
+        search = self.get_argument("search", "")
+        logging.debug("num=%d, page=%d, sort=%s, desc=%s" % (num, page, sort, desc))
+
+        self.db.sort(field=sort, ascending=(not desc))
+        start = page * num
+        end = start + num
+        all_ids = list(self.cache.search(search))
+        total = len(all_ids)
+
+        # sort by id
+        if sort == "id":
+            all_ids.sort(reverse=desc)
+
+        books = []
+        page_ids = all_ids[start:end]
+        if page_ids:
+            books = [SimpleBookFormatter(b, self.cdn_url).format() for b in self.get_books(ids=page_ids)]
+
+        return {"err": "ok", "items": books, "total": total}
+
+
 def routes():
     return [
         (r"/api/admin/ssl", AdminSSL),
@@ -426,4 +475,5 @@ def routes():
         (r"/api/admin/install", AdminInstall),
         (r"/api/admin/settings", AdminSettings),
         (r"/api/admin/testmail", AdminTestMail),
+        (r"/api/admin/book/list", AdminBookList),
     ]

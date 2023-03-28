@@ -52,6 +52,7 @@ def setup_server():
 
     # set env
     main.options.with_library = testdir + "/library/"
+    main.CONF["scan_upload_path"] = testdir + "/cases/"
     main.CONF["ALLOW_GUEST_PUSH"] = False
     main.CONF["ALLOW_GUEST_DOWNLOAD"] = False
     main.CONF["upload_path"] = "/tmp/"
@@ -62,6 +63,7 @@ def setup_server():
     main.CONF["installed"] = True
     main.CONF["INVITE_MODE"] = False
     main.CONF["user_database"] = "sqlite:///%s/library/users.db" % testdir
+    main.CONF["db_engine_args"] = {"echo": True}
     if _app is None:
         _app = main.make_app()
 
@@ -114,6 +116,8 @@ class TestApp(testing.AsyncHTTPTestCase):
         return _app
 
     def json(self, url, *args, **kwargs):
+        if 'request_timeout' not in kwargs:
+            kwargs['request_timeout'] = 60
         rsp = self.fetch(url, *args, **kwargs)
         self.assertEqual(rsp.code, 200)
         return json.loads(rsp.body)
@@ -423,8 +427,8 @@ class TestBook(TestWithUserLogin):
     def test_read(self):
         with mock.patch.object(webserver.handlers.book.BookRead, "extract_book", return_value="Yo"):
             for bid in BIDS:
-                rsp = self.fetch("/read/%s" % bid)
-                self.assertEqual(rsp.code, 200)
+                rsp = self.fetch("/read/%s" % bid, follow_redirects=False)
+                self.assertEqual(rsp.code, 302 if bid == BID_PDF else 200)
 
     def test_edit(self):
         body = {
@@ -762,6 +766,7 @@ class TestInviteMode(TestApp):
 
 
 def setUpModule():
+    os.environ["ASYNC_TEST_TIMEOUT"] = "60"
     logging.basicConfig(
         level=logging.DEBUG,
         datefmt="%Y-%m-%d %H:%M:%S",

@@ -22,7 +22,7 @@ export default {
       },
     ],
     link: [
-      { rel: 'shortcut icon', type: 'image/x-icon', href: '/favicon.ico' }
+      { rel: 'shortcut icon', type: 'image/x-icon', href: '/logo/favicon.ico' }
     ]
   },
 

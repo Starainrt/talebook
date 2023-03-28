@@ -14,7 +14,8 @@ from gettext import gettext as _
 from jinja2 import Environment, FileSystemLoader
 from sqlalchemy import func as sql_func
 from tornado import web
-from webserver import loader
+
+from webserver import loader, utils
 
 # import social_tornado.handlers
 from webserver.models import Item, Message, Reader
@@ -48,7 +49,7 @@ def js(func):
     def do(self, *args, **kwargs):
         try:
             rsp = func(self, *args, **kwargs)
-            rsp['msg'] = rsp.get("msg", "")
+            rsp["msg"] = rsp.get("msg", "")
         except Exception as e:
             import traceback
 
@@ -74,6 +75,17 @@ def auth(func):
     def do(self, *args, **kwargs):
         if not self.current_user:
             return {"err": "user.need_login", "msg": _(u"请先登录")}
+        return func(self, *args, **kwargs)
+
+    return do
+
+
+def is_admin(func):
+    def do(self, *args, **kwargs):
+        if not self.current_user:
+            return {"err": "user.need_login", "msg": _(u"请先登录")}
+        if not self.admin_user:
+            return {"err": "permission.not_admin", "msg": _(u"当前用户非管理员")}
         return func(self, *args, **kwargs)
 
     return do
@@ -144,8 +156,8 @@ class BaseHandler(web.RequestHandler):
         self.site_url = self.request.protocol + "://" + host
 
         # 默认情况下，访问站内资源全部采用相对路径
-        self.api_url = ""   # API动态请求地址
-        self.cdn_url = ""   # 可缓存的资源，图片，文件
+        self.api_url = ""  # API动态请求地址
+        self.cdn_url = ""  # 可缓存的资源，图片，文件
 
         # 如果设置有static_host配置，则改为绝对路径
         if CONF["static_host"]:
@@ -195,7 +207,8 @@ class BaseHandler(web.RequestHandler):
         login_time = self.get_secure_cookie("lt")
         if not login_time or int(login_time) < int(time.time()) - 7 * 86400:
             return None
-        return self.get_secure_cookie("user_id")
+        uid = self.get_secure_cookie("user_id")
+        return int(uid) if uid.isdigit() else None
 
     def get_current_user(self):
         user_id = self.user_id()
@@ -302,7 +315,7 @@ class BaseHandler(web.RequestHandler):
             raise web.HTTPError(400, "%s is not a valid sort field" % field)
 
         keyg = CSSortKeyGenerator([(field, order)], self.db.field_metadata, self.db.prefs)
-        items.sort(key=keyg, reverse=not order)
+        items.sort(key=keyg)
 
     def get_template_path(self):
         """获取模板路径"""
@@ -440,8 +453,8 @@ class BaseHandler(web.RequestHandler):
         args = {"table": table, "field": field, "name_column": name_column}
         sql = (
             """SELECT A.id, %(name_column)s, count(distinct book) as count
-        FROM %(table)s as A left join books_%(table)s_link as B
-        on A.id = B.%(field)s group by A.id"""
+            FROM %(table)s as A left join books_%(table)s_link as B
+            on A.id = B.%(field)s group by A.id"""
             % args
         )
         logging.debug(sql)
@@ -449,8 +462,8 @@ class BaseHandler(web.RequestHandler):
         items = [{"id": a, "name": b, "count": c} for a, b, c in rows]
         return items
 
-    def books_by_timestamp(self):
-        sql = "SELECT id, timestamp FROM books order by timestamp desc"
+    def books_by_id(self):
+        sql = "SELECT id FROM books order by id desc"
         ids = [v[0] for v in self.cache.backend.conn.get(sql)]
         return ids
 
@@ -494,7 +507,10 @@ class BaseHandler(web.RequestHandler):
     def mail(self, sender, to, subject, body, attachment_data=None, attachment_name=None, **kwargs):
         from calibre.utils.smtp import sendmail
 
+        smtp_port = 465
         relay = kwargs.get("relay", CONF["smtp_server"])
+        if ':' in relay:
+            relay, smtp_port = relay.split(":")
         username = kwargs.get("username", CONF["smtp_username"])
         password = kwargs.get("password", CONF["smtp_password"])
         mail = self.create_mail(sender, to, subject, body, attachment_data, attachment_name)
@@ -503,7 +519,7 @@ class BaseHandler(web.RequestHandler):
             from_=sender,
             to=[to],
             timeout=20,
-            port=465,
+            port=int(smtp_port),
             encryption="SSL",
             relay=relay,
             username=username,
@@ -513,7 +529,7 @@ class BaseHandler(web.RequestHandler):
 
 class ListHandler(BaseHandler):
     def get_item_books(self, category, name):
-        ids = books = []
+        books = []
         item_id = self.cache.get_item_id(category, name)
         if item_id:
             ids = self.db.get_books_for_category(category, item_id)
@@ -524,7 +540,6 @@ class ListHandler(BaseHandler):
         items.sort(key=lambda x: x[field], reverse=not ascending)
 
     def sort_books(self, items, field):
-        self.do_sort(items, "title", True)
         fm = self.db.field_metadata
         keys = frozenset(fm.sortable_field_keys())
         if field in keys:
@@ -535,29 +550,28 @@ class ListHandler(BaseHandler):
                 "timestamp",
             )
             self.do_sort(items, field, ascending)
+        else:
+            self.do_sort(items, "id", False)
         return None
 
     @js
-    def render_book_list(self, all_books, ids=None, title=None):
+    def render_book_list(self, all_books, ids=None, title=None, sort_by_id=False):
         start = self.get_argument_start()
-        sort = self.get_argument("sort", "timestamp")
         try:
             size = int(self.get_argument("size"))
         except:
-            size = 30
-        delta = min(max(size, 30), 100)
-
-        count = 0
-        books = []
+            size = 60
+        delta = min(max(size, 60), 100)
 
         if ids:
             ids = list(ids)
             count = len(ids)
             books = self.get_books(ids=ids[start : start + delta])
-            self.sort_books(books, sort)
+            if sort_by_id:
+                # 归一化，按照id从大到小排列。
+                self.do_sort(books, "id", False)
         else:
             count = len(all_books)
-            self.sort_books(all_books, sort)
             books = all_books[start : start + delta]
         return {
             "err": "ok",
@@ -567,55 +581,4 @@ class ListHandler(BaseHandler):
         }
 
     def fmt(self, b):
-        def get(k, default=_("Unknown")):
-            v = b.get(k, None)
-            if not v:
-                v = default
-            return v
-
-        collector = b.get("collector", None)
-        if isinstance(collector, dict):
-            collector = collector.get("username", None)
-        elif collector:
-            collector = collector.username
-
-        try:
-            pubdate = b["pubdate"].strftime("%Y-%m-%d")
-        except:
-            pubdate = None
-
-        pub = b.get("publisher", None)
-        if not pub:
-            pub = _("Unknown")
-
-        author_sort = b.get("author_sort", None)
-        if not author_sort:
-            author_sort = _("Unknown")
-
-        comments = b.get("comments", None)
-        if not comments:
-            comments = _(u"点击浏览详情")
-
-        return {
-            "id": b["id"],
-            "title": b["title"],
-            "rating": b["rating"],
-            "count_visit": get("count_visit", 0),
-            "count_download": get("count_download", 0),
-            "timestamp": b["timestamp"].strftime("%Y-%m-%d"),
-            "pubdate": pubdate,
-            "collector": collector,
-            "author": ", ".join(b["authors"]),
-            "authors": b["authors"],
-            "tag": " / ".join(b["tags"]),
-            "tags": b["tags"],
-            "author_sort": get("author_sort"),
-            "publisher": get("publisher"),
-            "comments": get("comments", _(u"暂无简介")),
-            "series": get("series", None),
-            "language": get("language", None),
-            "isbn": get("isbn", None),
-            "img": self.cdn_url + "/get/cover/%(id)s.jpg?t=%(timestamp)s" % b,
-            "author_url": self.api_url + "/author/" + author_sort,
-            "publisher_url": self.api_url + "/publisher/" + pub,
-        }
+        return utils.BookFormatter(self, b).format()

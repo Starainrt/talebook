@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: UTF-8 -*-
-
 import math
 import sys
+from functools import cmp_to_key
 from gettext import gettext as _
 
+from webserver import utils
 from webserver.handlers.base import ListHandler, js
 
 
@@ -74,6 +75,7 @@ class MetaBooks(ListHandler):
         if meta in ["rating"]:
             name = int(name)
         books = self.get_item_books(category, name)
+        books.sort(key=cmp_to_key(utils.compare_books_by_rating_or_id), reverse=True)
         return self.render_book_list(books, title=title)
 
 

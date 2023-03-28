@@ -22,7 +22,6 @@ CHROME_HEADERS = {
     + "Chrome/66.0.3359.139 Safari/537.36",
 }
 
-
 KEY = "douban"
 REMOVES = [
     re.compile(r"^\([^)]*\)\s*"),
@@ -33,7 +32,7 @@ REMOVES = [
 
 
 def str2date(s):
-    for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%Y-%m", _("%Y年"), "%Y"):
+    for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%Y-%m", _("%Y年"), _("%Y年%m月"), _("%Y年%m月%d日"), "%Y"):
         try:
             return datetime.datetime.strptime(s, fmt).replace(tzinfo=datetime.timezone.utc)
         except:
@@ -83,6 +82,8 @@ class DoubanBookApi(object):
         return data
 
     def get_book_by_isbn(self, isbn):
+        if not isbn:
+            return None
         url = "%s/v2/book/isbn/%s" % (self.baseUrl, isbn)
         return self.request(url)
 
@@ -141,6 +142,8 @@ class DoubanBookApi(object):
                 authors.append(author)
         if not authors:
             authors = [u"佚名"]
+
+        logging.debug("=================\nsource metadata:\n%s" % book)
 
         from calibre.ebooks.metadata.book.base import Metadata
         from calibre.utils.date import utcnow

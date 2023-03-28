@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: UTF-8 -*-
 
-import datetime
 import functools
 import logging
 import os
@@ -16,7 +15,8 @@ from gettext import gettext as _
 
 import tornado.escape
 from tornado import web
-from webserver import constants, loader
+
+from webserver import constants, loader, utils
 from webserver.handlers.base import BaseHandler, ListHandler, auth, js
 from webserver.models import Item
 from webserver.plugins.meta import baike, douban
@@ -51,67 +51,50 @@ def do_ebook_convert(old_path, new_path, log_path):
     if new_path.lower().endswith(".epub"):
         args += ["--flow-size", "0"]
 
+    timeout = 300
+    try:
+        timeout = int(CONF["convert_timeout"])
+    except:
+        pass
+
     with open(log_path, "w") as log:
         cmd = " ".join("'%s'" % v for v in args)
         logging.info("CMD: %s" % cmd)
         p = subprocess.Popen(args, stdout=log, stderr=subprocess.PIPE)
         try:
-            _, stde = p.communicate(timeout=100)
+            _, stde = p.communicate(timeout=timeout)
             logging.info("ebook-convert finish: %s, err: %s" % (new_path, bytes.decode(stde)))
         except subprocess.TimeoutExpired:
             p.kill()
             logging.info("ebook-convert timeout: %s" % new_path)
-            log.write(u"\n服务器处理异常，请在QQ群里联系管理员。\n[FINISH]")
+            log.info("ebook-convert timeout: %s" % new_path)
+            log.write(u"\n服务器转换书本格式时超时了。请在配置管理页面调大超时时间。\n[FINISH]")
             return False
         return True
 
 
 class Index(BaseHandler):
     def fmt(self, b):
-        pub = b.get("publisher", None)
-        if not pub:
-            pub = _("Unknown")
-
-        author_sort = b.get("author_sort", None)
-        if not author_sort:
-            author_sort = _("Unknown")
-
-        comments = b.get("comments", None)
-        if not comments:
-            comments = _(u"点击浏览详情")
-
-        return {
-            "id": b["id"],
-            "title": b["title"],
-            "rating": b["rating"],
-            "author": ", ".join(b["authors"]),
-            "authors": b["authors"],
-            "publisher": pub,
-            "comments": comments,
-            "img": self.cdn_url + "/get/cover/%(id)s.jpg?t=%(timestamp)s" % b,
-            "author_url": self.api_url + "/author/" + author_sort,
-            "publisher_url": self.api_url + "/publisher/" + pub,
-        }
+        return utils.BookFormatter(self, b).format()
 
     @js
     def get(self):
-        max_random = 30
-        max_recent = 30
-        cnt_random = min(int(self.get_argument("random", 8)), max_random)
-        cnt_recent = min(int(self.get_argument("recent", 10)), max_recent)
+        cnt_random = min(int(self.get_argument("random", 8)), 30)
+        cnt_recent = min(int(self.get_argument("recent", 10)), 30)
 
         # nav = "index"
         # title = _(u"全部书籍")
         ids = list(self.cache.search(""))
         if not ids:
             raise web.HTTPError(404, reason=_(u"本书库暂无藏书"))
-        random_ids = random.sample(ids, min(max_random, len(ids)))
+        random_ids = random.sample(ids, min(cnt_random, len(ids)))
         random_books = [b for b in self.get_books(ids=random_ids) if b["cover"]]
-        random_books = random_books[:cnt_random]
-        ids.sort()
-        new_ids = random.sample(ids[-300:], min(max_recent, len(ids)))
+        random_books.sort(key=lambda x: x["id"], reverse=True)
+
+        ids.sort(reverse=True)
+        new_ids = random.sample(ids[0:100], min(cnt_recent, len(ids)))
         new_books = [b for b in self.get_books(ids=new_ids) if b["cover"]]
-        new_books = new_books[:cnt_recent]
+        new_books.sort(key=lambda x: x["id"], reverse=True)
 
         return {
             "random_books_count": len(random_books),
@@ -122,80 +105,13 @@ class Index(BaseHandler):
 
 
 class BookDetail(BaseHandler):
-    def set_book(self, book):
-        self.book = book
-
-    def val(self, k, default_value=_("Unknown")):
-        v = self.book.get(k, None)
-        if not v:
-            v = default_value
-        if isinstance(v, datetime.datetime):
-            return v.strftime("%Y-%m-%d")
-        return v
-
     @js
     def get(self, id):
         book = self.get_book(id)
-        book_id = book["id"]
-        book["is_owner"] = self.is_book_owner(book_id, self.user_id())
-        book["is_public"] = True
-        if self.is_admin():
-            book["is_public"] = True
-            book["is_owner"] = True
-        self.user_history("visit_history", book)
-        files = []
-        for fmt in book.get("available_formats", ""):
-            try:
-                filesize = self.db.sizeof_format(book_id, fmt, index_is_id=True)
-            except:
-                continue
-            files.append(
-                {
-                    "format": fmt,
-                    "size": filesize,
-                    "href": self.cdn_url + "/api/book/%s.%s" % (book_id, fmt),
-                }
-            )
-
-        if self.user_id():
-            self.count_increase(book_id, count_visit=1)
-        else:
-            self.count_increase(book_id, count_guest=1)
-
-        collector = book.get("collector", None)
-        if isinstance(collector, dict):
-            collector = collector.get("username", None)
-        elif collector:
-            collector = collector.username
-
-        b = book
-        self.set_book(book)
         return {
             "err": "ok",
             "kindle_sender": CONF["smtp_username"],
-            "book": {
-                "id": b["id"],
-                "title": b["title"],
-                "rating": b["rating"],
-                "count_visit": b["count_visit"],
-                "count_download": b["count_download"],
-                "timestamp": self.val("timestamp"),
-                "pubdate": self.val("pubdate"),
-                "collector": collector,
-                "authors": b["authors"],
-                "author": ", ".join(b["authors"]),
-                "tags": b["tags"],
-                "author_sort": self.val("author_sort"),
-                "publisher": self.val("publisher"),
-                "comments": self.val("comments", _(u"暂无简介")),
-                "series": self.val("series", None),
-                "language": self.val("language", None),
-                "isbn": self.val("isbn", None),
-                "files": files,
-                "is_public": b["is_public"],
-                "is_owner": b["is_owner"],
-                "img": self.cdn_url + "/get/cover/%(id)s.jpg?t=%(timestamp)s" % b,
-            },
+            "book": utils.BookFormatter(self, book).format(with_files=True, with_perms=True),
         }
 
 
@@ -221,6 +137,7 @@ class BookRefer(BaseHandler):
             maxCount=CONF["douban_max_count"],
         )
         # first, search title
+        books = []
         try:
             books = api.search_books(title) or []
         except:
@@ -324,7 +241,20 @@ class BookRefer(BaseHandler):
         else:
             if only_meta == "yes":
                 refer_mi.cover_data = None
+            if len(refer_mi.tags) == 0 and len(mi.tags) == 0:
+                ts = []
+                for nn, tags in constants.BOOKNAV:
+                    for tag in tags:
+                        if tag in refer_mi.title or tag in refer_mi.comments:
+                            ts.append(tag)
+                        elif tag in refer_mi.authors:
+                            ts.append(tag)
+                if len(ts) > 0:
+                    mi.tags += ts[:8]
+                    logging.info("tags are %s" % ','.join(mi.tags))
+                    self.db.set_tags(book_id, mi.tags)
             mi.smart_update(refer_mi, replace_metadata=True)
+
         self.db.set_metadata(book_id, mi)
         return {"err": "ok"}
 
@@ -390,7 +320,7 @@ class BookDelete(BaseHandler):
 
         self.db.delete_book(bid)
         self.add_msg("success", _(u"删除书籍《%s》") % book["title"])
-        return {"err": "ok"}
+        return {"err": "ok", "msg": _(u"删除成功")}
 
 class BookTrans(BaseHandler):
     def send_error_of_not_invited(self):
@@ -454,8 +384,12 @@ class BookDownload(BaseHandler):
             else:
                 return self.redirect("/login")
 
-        if self.current_user and not self.current_user.can_save():
-            raise web.HTTPError(403, reason=_(u"无权操作"))
+        if self.current_user:
+            if self.current_user.can_save():
+                if not self.current_user.is_active():
+                    raise web.HTTPError(403, reason=_(u"无权操作，请先登录注册邮箱激活账号。"))
+            else:
+                raise web.HTTPError(403, reason=_(u"无权操作"))
 
         fmt = fmt.lower()
         logging.debug("download %s.%s" % (id, fmt))
@@ -468,8 +402,8 @@ class BookDownload(BaseHandler):
         path = book["fmt_%s" % fmt]
         book["fmt"] = fmt
         book["title"] = urllib.parse.quote_plus(book["title"])
-        fname = '%(id)d-%(title)s.%(fmt)s' % book
-        att = u'attachment; filename="%s"; filename*=UTF-8\'\'%s' % (fname, fname)
+        fname = "%(id)d-%(title)s.%(fmt)s" % book
+        att = u"attachment; filename=\"%s\"; filename*=UTF-8''%s" % (fname, fname)
         if is_opds:
             att = u'attachment; filename="%(id)d.%(fmt)s"' % book
 
@@ -485,7 +419,7 @@ class BookNav(ListHandler):
         tagmap = self.all_tags_with_count()
         navs = []
         for h1, tags in constants.BOOKNAV:
-            new_tags = [{"name": v, "count": tagmap.get(v, 0)} for v in tags]
+            new_tags = [{"name": v, "count": tagmap.get(v, 0)} for v in tags if tagmap.get(v, 0) > 0]
             navs.append({"legend": h1, "tags": new_tags})
         return {"err": "ok", "navs": navs}
 
@@ -493,8 +427,8 @@ class BookNav(ListHandler):
 class RecentBook(ListHandler):
     def get(self):
         title = _(u"新书推荐")
-        ids = self.books_by_timestamp()
-        return self.render_book_list([], ids=ids, title=title)
+        ids = self.books_by_id()
+        return self.render_book_list([], ids=ids, title=title, sort_by_id=True)
 
 
 class SearchBook(ListHandler):
@@ -514,7 +448,7 @@ class HotBook(ListHandler):
         db_items = self.session.query(Item).filter(Item.count_visit > 1).order_by(Item.count_download.desc())
         count = db_items.count()
         start = self.get_argument_start()
-        delta = 30
+        delta = 60
         page_max = int(count / delta)
         page_now = int(start / delta)
         pages = []
@@ -524,13 +458,13 @@ class HotBook(ListHandler):
         items = db_items.limit(delta).offset(start).all()
         ids = [item.book_id for item in items]
         books = self.get_books(ids=ids)
-        self.do_sort(books, "count_visit", False)
+        self.do_sort(books, "count_download", False)
         return self.render_book_list(books, title=title)
 
 
 class BookUpload(BaseHandler):
     @classmethod
-    def convert(self, s):
+    def convert(cls, s):
         try:
             return s.group(0).encode("latin1").decode("utf8")
         except:
@@ -596,8 +530,12 @@ class BookRead(BaseHandler):
         if not CONF["ALLOW_GUEST_READ"] and not self.current_user:
             return self.redirect("/login")
 
-        if self.current_user and not self.current_user.can_save():
-            raise web.HTTPError(403, reason=_(u"无权操作"))
+        if self.current_user:
+            if self.current_user.can_read():
+                if not self.current_user.is_active():
+                    raise web.HTTPError(403, reason=_(u"无权在线阅读，请先登录注册邮箱激活账号。"))
+            else:
+                raise web.HTTPError(403, reason=_(u"无权在线阅读"))
 
         book = self.get_book(id)
         book_id = book["id"]
@@ -610,25 +548,39 @@ class BookRead(BaseHandler):
             if not fpath:
                 continue
             # epub_dir is for javascript
-            epub_dir = os.path.dirname(fpath).replace(CONF["with_library"], "/get/extract/")
-            epub_dir = urllib.parse.quote(epub_dir)
+            epub_dir = "/get/extract/%s" % book["id"]
+            is_ready = self.is_ready(book)
             self.extract_book(book, fpath, fmt)
-            return self.html_page("book/read.html", vars())
+            return self.html_page("book/read.html", {
+                "book": book,
+                "epub_dir": epub_dir,
+                "is_ready": is_ready,
+            })
 
         if "fmt_pdf" in book:
-            path = book["fmt_pdf"]
-            self.set_header("Content-Type", "application/pdf")
-            with open(path, "rb") as f:
-                self.write(f.read())
-            return
+            # PDF类书籍需要检查下载权限。
+            if not CONF["ALLOW_GUEST_DOWNLOAD"] and not self.current_user:
+                return self.redirect("/login")
+
+            if self.current_user and not self.current_user.can_save():
+                raise web.HTTPError(403, reason=_(u"无权在线阅读PDF类书籍"))
+
+            pdf_url = urllib.parse.quote_plus(self.api_url + "/api/book/%(id)d.PDF" % book)
+            pdf_reader_url = CONF["PDF_VIEWER"] % {"pdf_url": pdf_url}
+            return self.redirect(pdf_reader_url)
 
         raise web.HTTPError(404, reason=_(u"抱歉，在线阅读器暂不支持该格式的书籍"))
 
+    def is_ready(self, book):
+        # 解压后的目录
+        fdir = os.path.join(CONF["extract_path"], str(book["id"]))
+        return os.path.isfile(fdir + "/META-INF/container.xml")
+
     @background
     def extract_book(self, book, fpath, fmt):
-        fdir = os.path.dirname(fpath).replace(CONF["with_library"], CONF["extract_path"])
+        # 解压后的目录
+        fdir = os.path.join(CONF["extract_path"], str(book["id"]))
         subprocess.call(["mkdir", "-p", fdir])
-        # fdir = os.path.dirname(fpath) + "/extract"
         if os.path.isfile(fdir + "/META-INF/container.xml"):
             subprocess.call(["chmod", "a+rx", "-R", fdir + "/META-INF"])
             return
@@ -655,7 +607,7 @@ class BookRead(BaseHandler):
             fpath = new_path
 
         # extract to dir
-        logging.error("extract book: %s" % fpath)
+        logging.error("extract book: [%s] into [%s]", fpath, fdir)
         os.chdir(fdir)
         with open(progress_file, "a") as log:
             log.write(u"Dir: %s\n" % fdir)
@@ -672,8 +624,11 @@ class BookPush(BaseHandler):
         if not CONF["ALLOW_GUEST_PUSH"]:
             if not self.current_user:
                 return {"err": "user.need_login", "msg": _(u"请先登录")}
-            elif not self.current_user.can_push():
-                return {"err": "permission", "msg": _(u"无权操作")}
+            else:
+                if not self.current_user.can_push():
+                    return {"err": "permission", "msg": _(u"无权操作")}
+                elif not self.current_user.is_active():
+                    return {"err": "permission", "msg": _(u"无权操作，请先激活账号。")}
 
         mail_to = self.get_argument("mail_to", None)
         if not mail_to:
@@ -685,15 +640,15 @@ class BookPush(BaseHandler):
         self.user_history("push_history", book)
         self.count_increase(book_id, count_download=1)
 
-        # check format
-        for fmt in ["mobi", "azw", "pdf"]:
+        # https://www.amazon.cn/gp/help/customer/display.html?ref_=hp_left_v4_sib&nodeId=G5WYD9SAF7PGXRNA
+        for fmt in ["epub", "pdf"]:
             fpath = book.get("fmt_%s" % fmt, None)
             if fpath:
                 self.bg_send_book(book, mail_to, fmt, fpath)
                 return {"err": "ok", "msg": _(u"服务器后台正在推送了。您可关闭此窗口，继续浏览其他书籍。")}
 
         # we do no have formats for kindle
-        if "fmt_epub" not in book and "fmt_azw3" not in book and "fmt_txt" not in book:
+        if "fmt_azw3" not in book and "fmt_txt" not in book:
             return {
                 "err": "book.no_format_for_kindle",
                 "msg": _(u"抱歉，该书无可用于kindle阅读的格式"),
@@ -712,7 +667,8 @@ class BookPush(BaseHandler):
 
     @background
     def bg_convert_and_send(self, book, mail_to):
-        fmt = "mobi"  # best format for kindle
+        # https://www.amazon.cn/gp/help/customer/display.html?ref_=hp_left_v4_sib&nodeId=G5WYD9SAF7PGXRNA
+        fmt = "epub"  # best format for kindle
         fpath = self.convert_to_mobi_format(book, fmt)
         if fpath:
             self.do_send_mail(book, mail_to, fmt, fpath)
@@ -728,7 +684,7 @@ class BookPush(BaseHandler):
         progress_file = self.get_path_progress(book["id"])
 
         old_path = None
-        for f in ["txt", "azw3", "epub"]:
+        for f in ["txt", "azw3"]:
             old_path = book.get("fmt_%s" % f, old_path)
 
         logging.debug("convert book from [%s] to [%s]", old_path, new_path)
@@ -756,8 +712,8 @@ class BookPush(BaseHandler):
             "site_title": CONF["site_title"],
         }
         mail_from = self.settings["smtp_username"]
-        mail_subject = _("%(site_title)s：推送给您一本书《%(title)s》") % mail_args
-        mail_body = _(u"为您奉上一本《%(title)s》, 欢迎常来访问%(site_title)s！%(site_url)s") % mail_args
+        mail_subject = _(self.settings["push_title"]) % mail_args
+        mail_body = _(self.settings["push_content"]) % mail_args
         status = msg = ""
         try:
             logging.info("send %(title)s to %(mail_to)s" % vars())

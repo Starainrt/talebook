@@ -65,6 +65,7 @@ def utf8_construct_path_name(book_id, title, author):
 
     book_id = " (%d)" % book_id
     lm = DB.PATH_LIMIT - (len(book_id) // 2) - 2
+    lm = lm // 4  # UTF8 is 1~4 char
     author = safe_filename(author)[:lm]
     title = safe_filename(title.lstrip())[:lm].rstrip()
     if not title:
@@ -86,6 +87,7 @@ def utf8_construct_file_name(book_id, title, author, extlen):
 
     extlen = max(extlen, 14)  # 14 accounts for ORIGINAL_EPUB
     lm = (DB.PATH_LIMIT - extlen - 2) // 2
+    lm = lm // 4  # UTF8 is 1~4 char
     if lm < 5:
         raise ValueError("Extension length too long: %d" % extlen)
     author = safe_filename(author)[:lm]
@@ -120,11 +122,6 @@ def bind_topdir_book_names(cache):
 
 
 def make_app():
-    init_calibre()
-
-    from calibre.db.legacy import LibraryDatabase
-    from calibre.utils.date import fromtimestamp
-
     auth_db_path = CONF["user_database"]
     logging.info("Init library with [%s]" % options.with_library)
     logging.info("Init AuthDB  with [%s]" % auth_db_path)
@@ -140,6 +137,22 @@ def make_app():
         logic.update_nuxtjs_env()
         logging.info("done")
         sys.exit(0)
+
+    # build sql session factory
+    engine = create_engine(auth_db_path, **CONF["db_engine_args"])
+    ScopedSession = scoped_session(sessionmaker(bind=engine, autoflush=True, autocommit=False))
+    models.bind_session(ScopedSession)
+    init_social(models.Base, ScopedSession, CONF)
+
+    if options.syncdb:
+        models.user_syncdb(engine)
+        logging.info("Create tables into DB")
+        sys.exit(0)
+
+    init_calibre()
+
+    from calibre.db.legacy import LibraryDatabase
+    from calibre.utils.date import fromtimestamp
 
     book_db = LibraryDatabase(os.path.expanduser(options.with_library))
     cache = book_db.new_api
@@ -162,17 +175,6 @@ def make_app():
             pass
 
     gui2.must_use_qt = new_must_use_qt
-
-    # build sql session factory
-    engine = create_engine(auth_db_path, echo=False)
-    ScopedSession = scoped_session(sessionmaker(bind=engine, autoflush=True, autocommit=False))
-    models.bind_session(ScopedSession)
-    init_social(models.Base, ScopedSession, CONF)
-
-    if options.syncdb:
-        models.user_syncdb(engine)
-        logging.info("Create tables into DB")
-        sys.exit(0)
 
     path = CONF["resource_path"] + "/calibre/default_cover.jpg"
     with open(path, "rb") as cover_file:
