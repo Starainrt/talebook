@@ -278,7 +278,6 @@ class BookTrans(BaseHandler):
         self.set_status(401)
         raise web.Finish()
 
-    @js
     def get(self, id, fmt):
         is_opds = self.get_argument("from", "") == "opds"
         if not CONF["ALLOW_GUEST_DOWNLOAD"] and not self.current_user:
@@ -309,15 +308,11 @@ class BookTrans(BaseHandler):
         old_path = None
         for f in ["epub", "mobi", "azw", "azw3", "txt"]:
             old_path = book.get("fmt_%s" % f, None)
-            if old_path:
-                break
-
-        logging.info("convert book from [%s] to [%s]", old_path, new_path)
-        ok = ConvertService().convert_and_save(self.user_id(), book, old_path, new_fmt)
-        if not ok:
-            self.add_msg("danger", u"文件格式转换失败，请联系管理员.")
-            return None
-        return new_path
+            if not old_path:
+                continue
+            logging.info("convert book from [%s] to [%s]", old_path, new_path)
+            ConvertService().convert_and_save(self.user_id(), book, old_path, new_fmt)
+            return new_path
 
 class BookDownload(BaseHandler):
     def send_error_of_not_invited(self):
