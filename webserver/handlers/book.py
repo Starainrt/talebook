@@ -272,6 +272,25 @@ class BookDelete(BaseHandler):
         self.add_msg("success", _(u"删除书籍《%s》") % book["title"])
         return {"err": "ok", "msg": _(u"删除成功")}
 
+def background(func):
+    @functools.wraps(func)
+    def run(*args, **kwargs):
+        def worker():
+            try:
+                func(*args, **kwargs)
+            except:
+                import logging
+                import traceback
+
+                logging.error("Failed to run background task:")
+                logging.error(traceback.format_exc())
+
+        t = threading.Thread(name="worker", target=worker)
+        t.setDaemon(True)
+        t.start()
+
+    return run
+
 class BookTrans(BaseHandler):
     def send_error_of_not_invited(self):
         self.set_header("WWW-Authenticate", "Basic")
@@ -314,7 +333,7 @@ class BookTrans(BaseHandler):
         logging.debug("convert book from [%s] to [%s]", old_path, new_path)
         ok = do_ebook_convert(old_path, new_path, progress_file)
         if not ok:
-            self.add_msg("danger", u"文件格式转换失败，请在QQ群里联系管理员.")
+            self.add_msg("danger", u"文件格式转换失败，请联系管理员.")
             return None
         with open(new_path, "rb") as f:
             self.db.add_format(book["id"], new_fmt, f, index_is_id=True)
