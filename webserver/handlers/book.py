@@ -308,9 +308,11 @@ class BookTrans(BaseHandler):
 
         old_path = None
         for f in ["epub", "mobi", "azw", "azw3", "txt"]:
-            old_path = book.get("fmt_%s" % f, old_path)
+            old_path = book.get("fmt_%s" % f, None)
+            if not fpath:
+                continue
 
-        logging.debug("convert book from [%s] to [%s]", old_path, new_path)
+        logging.info("convert book from [%s] to [%s]", old_path, new_path)
         ok = ConvertService().convert_and_save(self.user_id(), book, old_path, new_fmt)
         if not ok:
             self.add_msg("danger", u"文件格式转换失败，请联系管理员.")
