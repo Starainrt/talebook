@@ -273,17 +273,9 @@ class BookDelete(BaseHandler):
         return {"err": "ok", "msg": _(u"删除成功")}
 
 class BookTrans(BaseHandler):
-    def send_error_of_not_invited(self):
-        self.set_header("WWW-Authenticate", "Basic")
-        self.set_status(401)
-        raise web.Finish()
 
     def get(self, id, fmt):
-        is_opds = self.get_argument("from", "") == "opds"
         if not CONF["ALLOW_GUEST_DOWNLOAD"] and not self.current_user:
-            if is_opds:
-                return self.send_error_of_not_invited()
-            else:
                 return self.redirect("/login")
         if self.current_user and not self.current_user.can_save():
             raise web.HTTPError(403, reason=_(u"无权操作"))
@@ -292,27 +284,15 @@ class BookTrans(BaseHandler):
         book = self.get_book(id)
         if "fmt_%s" % fmt in book:
             return {"err":"ok","info":"already trans"}
-        self.convert_format(book,fmt)
-        return {"err":"ok","info":"background converting"}
-
-    def get_path_of_fmt(self, book, fmt):
-        """for mock test"""
-        from calibre.utils.filenames import ascii_filename
-
-        return os.path.join(CONF["convert_path"], "%s.%s" % (ascii_filename(book["title"]), fmt))
-
-    def convert_format(self, book, new_fmt):
-        new_path = self.get_path_of_fmt(book, new_fmt)
-        #progress_file = self.get_path_progress(book["id"])
-
-        old_path = None
         for f in ["epub", "mobi", "azw", "azw3", "txt"]:
             old_path = book.get("fmt_%s" % f, None)
             if not old_path:
                 continue
-            logging.info("convert book from [%s] to [%s]", old_path, new_path)
+            logging.info("convert book from [%s] to format [%s]", old_path, new_fmt)
             ConvertService().convert_and_save(self.user_id(), book, old_path, new_fmt)
-            return new_path
+            return {"err":"ok","info":"background converting"}
+        return {"err":"ok","info":"no file to convert"}
+        
 
 class BookDownload(BaseHandler):
     def send_error_of_not_invited(self):
@@ -357,7 +337,7 @@ class BookDownload(BaseHandler):
             self.write(f.read())
 
 
-class BookNav(ListHandler):
+class BookNav
     @js
     def get(self):
         tagmap = self.all_tags_with_count()
