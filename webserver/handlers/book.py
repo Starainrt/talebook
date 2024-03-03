@@ -309,8 +309,8 @@ class BookTrans(BaseHandler):
         old_path = None
         for f in ["epub", "mobi", "azw", "azw3", "txt"]:
             old_path = book.get("fmt_%s" % f, None)
-            if not old_path:
-                continue
+            if old_path:
+                break
 
         logging.info("convert book from [%s] to [%s]", old_path, new_path)
         ok = ConvertService().convert_and_save(self.user_id(), book, old_path, new_fmt)
