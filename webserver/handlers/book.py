@@ -337,7 +337,7 @@ class BookDownload(BaseHandler):
             self.write(f.read())
 
 
-class BookNav
+class BookNav(ListHandler):
     @js
     def get(self):
         tagmap = self.all_tags_with_count()
