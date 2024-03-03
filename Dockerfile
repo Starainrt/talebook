@@ -18,6 +18,8 @@ RUN npm install
 
 # spa build mode will clear ssr build data, run it first
 COPY app/ /app/
+RUN npm run build-spa
+RUN mv dist spa
 RUN npm run build
 
 
@@ -33,16 +35,36 @@ RUN if [ "x${BUILD_COUNTRY}" = "xCN" ]; then \
     pip config set global.index-url https://mirrors.aliyun.com/pypi/simple/; \
     fi
 
-# install envsubst
-RUN apt-get update && apt-get install -y gettext
+# set default language
+ENV LANG=C.UTF-8
+ENV PUID=1000
+ENV PGID=1000
+ENV TZ=Asia/Shanghai
+ENV SSR=OFF
+
+# install envsubst gosu procps
+RUN apt-get update -y && \
+    apt-get install -y gettext gosu procps && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Create a talebook user and change the Nginx startup user
+RUN useradd -u 911 -U -d /var/www/talebook -s /bin/false talebook && \
+    usermod -G users talebook && \
+    groupmod -g 911 talebook && \
+    sed -i "s/user www-data;/user talebook;/g" /etc/nginx/nginx.conf
 
 # intall nodejs for nuxtjs server side render
-RUN curl -fsSL https://deb.nodesource.com/setup_16.x | bash -
-RUN apt-get install -y nodejs
+RUN apt-get update -y && \
+    curl -fsSL https://deb.nodesource.com/setup_16.x | bash - && \
+    apt-get install -y nodejs && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 # install python packages
 COPY ["requirements.txt", "/tmp/"]
-RUN pip install -r /tmp/requirements.txt
+RUN pip install -r /tmp/requirements.txt && \
+    rm -rf /root/.cache
 
 # ----------------------------------------
 # 测试阶段
@@ -74,8 +96,9 @@ RUN mkdir -p /data/log/nginx/ && \
 
 COPY . /var/www/talebook/
 COPY conf/nginx/ssl.* /data/books/ssl/
-COPY conf/nginx/talebook.conf /etc/nginx/conf.d/talebook.conf
-COPY conf/supervisor/talebook.conf /etc/supervisor/conf.d/
+COPY conf/nginx/*.conf /etc/nginx/
+COPY conf/supervisor/*.conf /etc/supervisor/
+COPY --from=builder /app/spa/ /var/www/talebook/app/dist/
 COPY --from=builder /app/.nuxt/ /var/www/talebook/app/.nuxt/
 COPY --from=builder /app/node_modules/ /var/www/talebook/app/node_modules/
 COPY --from=builder /app/src/static/ /var/www/talebook/app/dist/

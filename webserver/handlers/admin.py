@@ -15,6 +15,7 @@ from gettext import gettext as _
 import tornado
 
 from webserver import loader
+from webserver.services.mail import MailService
 from webserver.handlers.base import BaseHandler, auth, js, is_admin
 from webserver.models import Reader
 from webserver.utils import SimpleBookFormatter
@@ -129,7 +130,7 @@ class AdminTestMail(BaseHandler):
         mail_body = _(u"这是一封测试邮件，验证邮件参数是否配置正确。")
 
         try:
-            self.mail(
+            MailService().do_send_mail(
                 mail_from,
                 mail_to,
                 mail_subject,
@@ -231,6 +232,7 @@ class AdminSettings(BaseHandler):
             "ALLOW_GUEST_READ",
             "ALLOW_REGISTER",
             "BOOK_NAMES_FORMAT",
+            "BOOK_NAV",
             "FRIENDS",
             "FOOTER",
             "INVITE_CODE",
@@ -344,7 +346,7 @@ class AdminInstall(BaseHandler):
         # set a random secret
         args["cookie_secret"] = u"%s" % uuid.uuid1()
         args["site_title"] = title
-        if invite == "true":
+        if invite == "true" and code:
             args["INVITE_MODE"] = True
             args["INVITE_CODE"] = code
         else:

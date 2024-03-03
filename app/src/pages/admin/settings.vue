@@ -7,79 +7,83 @@
                 </v-btn>
                 {{card.title}}
             </v-card-title>
-    
-            <v-card-text v-show="card.show">
+          <v-expand-transition>
+            <!-- v-card-text的padding导致动画收起时卡顿，置为 0，内部用一个div来控制-->
+            <v-card-text v-show="card.show" style="padding: 0">
+              <div style="padding: 0 16px 16px">
                 <p v-if="card.subtitle" class="">{{card.subtitle}}</p>
-
                 <template v-if="card.tips">
-                    <p v-for="t in card.tips" :key="t.text">{{t.text}} <a v-if="t.link" target="_blank" :href="t.link">链接</a></p>
+                  <p v-for="t in card.tips" :key="t.text">{{t.text}} <a v-if="t.link" target="_blank" :href="t.link">链接</a></p>
                 </template>
 
                 <template v-for="f in card.fields">
-                    <v-checkbox small hide-details v-if="f.type === 'checkbox' " :prepend-icon="f.icon" v-model="settings[f.key]" :key="f.key" :label="f.label" ></v-checkbox>
-                    <v-textarea outlined v-else-if="f.type === 'textarea' " :prepend-icon="f.icon" v-model="settings[f.key]" :key="f.key" :label="f.label" ></v-textarea>
-                    <v-text-field v-else :prepend-icon="f.icon" v-model="settings[f.key]" :key="f.key" :label="f.label" type="text"></v-text-field>
+                  <v-checkbox small hide-details v-if="f.type === 'checkbox' " :prepend-icon="f.icon" v-model="settings[f.key]" :key="f.key" :label="f.label" ></v-checkbox>
+                  <v-textarea outlined v-else-if="f.type === 'textarea' " :prepend-icon="f.icon" v-model="settings[f.key]" :key="f.key" :label="f.label" ></v-textarea>
+                  <v-select small hide-details v-else-if="f.type === 'select' " :prepend-icon="f.icon" v-model="settings[f.key]" :items="f.items" :key="f.key" :label="f.label" > </v-select>
+                  <v-text-field v-else :prepend-icon="f.icon" v-model="settings[f.key]" :key="f.key" :label="f.label" type="text"></v-text-field>
                 </template>
                 <template v-for="b in card.buttons">
-                    <v-btn :key="b.label" @click="run(b.action)" color="primary"><v-icon>{{b.icon}}</v-icon>{{b.label}}</v-btn>
+                  <v-btn :key="b.label" @click="run(b.action)" color="primary"><v-icon>{{b.icon}}</v-icon>{{b.label}}</v-btn>
                 </template>
 
                 <template v-for="g in card.groups" >
-                    <v-checkbox small hide-details v-model="settings[g.key]" :key="g.label" :label="g.label"></v-checkbox>
-                    <template v-if="settings[g.key]">
-                        <template v-for="f in g.fields">
-                            <v-textarea outlined v-if="f.type === 'textarea' " :prepend-icon="f.icon" v-model="settings[f.key]" :key="f.key" :label="f.label" ></v-textarea>
-                            <v-text-field v-else :prepend-icon="f.icon" v-model="settings[f.key]" :key="f.key" :label="f.label" type="text"></v-text-field>
-                        </template>
+                  <v-checkbox small hide-details v-model="settings[g.key]" :key="g.label" :label="g.label"></v-checkbox>
+                  <template v-if="settings[g.key]">
+                    <template v-for="f in g.fields">
+                      <v-textarea outlined v-if="f.type === 'textarea' " :prepend-icon="f.icon" v-model="settings[f.key]" :key="f.key" :label="f.label" ></v-textarea>
+                      <v-text-field v-else :prepend-icon="f.icon" v-model="settings[f.key]" :key="f.key" :label="f.label" type="text"></v-text-field>
                     </template>
+                  </template>
                 </template>
 
                 <template v-if="card.show_friends">
-                    <v-row v-for="(friend, idx) in settings.FRIENDS" :key="'friend-'+friend.href">
-                        <v-col class='py-0' cols=3>
-                            <v-text-field flat small hide-details single-line v-model="friend.text" label="名称" type="text"></v-text-field>
-                        </v-col>
-                        <v-col class='pa-0' cols=9>
-                            <v-text-field flat small hide-details single-line v-model="friend.href" label="链接" type="text"
-                                append-outer-icon="delete" @click:append-outer="settings.FRIENDS.splice(idx, 1)" ></v-text-field>
-                        </v-col>
-                    </v-row>
-                    <v-row>
-                        <v-col align="center">
-                            <v-btn color="primary" @click="settings.FRIENDS.push({text:'', href: ''})"><v-icon>add</v-icon>添加</v-btn>
-                        </v-col>
-                    </v-row>
+                  <v-row v-for="(friend, idx) in settings.FRIENDS" :key="'friend-'+friend.href">
+                    <v-col class='py-0' cols=3>
+                      <v-text-field flat small hide-details single-line v-model="friend.text" label="名称" type="text"></v-text-field>
+                    </v-col>
+                    <v-col class='pa-0' cols=9>
+                      <v-text-field flat small hide-details single-line v-model="friend.href" label="链接" type="text"
+                                    append-outer-icon="delete" @click:append-outer="settings.FRIENDS.splice(idx, 1)" ></v-text-field>
+                    </v-col>
+                  </v-row>
+                  <v-row>
+                    <v-col align="center">
+                      <v-btn color="primary" @click="settings.FRIENDS.push({text:'', href: ''})"><v-icon>add</v-icon>添加</v-btn>
+                    </v-col>
+                  </v-row>
                 </template>
 
                 <template v-if="card.show_socials">
-                    <p>所启用的社交网络将会在登录页面自动显示按钮。</p>
-                    <v-combobox v-model="settings.SOCIALS" :items="sns_items" label="选择要启用的社交网络账号" hide-selected multiple small-chips>
-                        <template v-slot:selection="{ attrs, item, parent, selected }">
-                            <v-chip v-bind="attrs" color="green lighten-3" :input-value="selected" label small >
-                                <span class="pr-2"> {{ item.text }} </span>
-                                <v-icon small @click="parent.selectItem(item)" >close</v-icon>
-                            </v-chip>
-                        </template>
-                    </v-combobox>
-                    <v-row v-for="s in settings.SOCIALS" :key="'social-'+s.value" >
-                        <v-col class='py-0' cols=12 sm=2>
-                            <v-subheader class="px-0 pt-4" :class="$vuetify.breakpoint.smAndUp?'float-right':''">
-                                {{s.text}}  (<a @click="show_sns_config(s)">说明</a>)
-                            </v-subheader>
-                        </v-col>
-                        <v-col class='py-0' cols=12 sm=3>
-                            <v-text-field small hide-details single-line v-model="settings['SOCIAL_AUTH_'+s.value.toUpperCase()+'_KEY']" label="Key" type="text"></v-text-field>
-                        </v-col>
-                        <v-col class='py-0' cols=12 sm=7>
-                            <v-text-field small hide-details single-line v-model="settings['SOCIAL_AUTH_'+s.value.toUpperCase()+'_SECRET']" label="Secret" type="text"></v-text-field>
-                        </v-col>
-                    </v-row>
+                  <p>所启用的社交网络将会在登录页面自动显示按钮。</p>
+                  <v-combobox v-model="settings.SOCIALS" :items="sns_items" label="选择要启用的社交网络账号" hide-selected multiple small-chips>
+                    <template v-slot:selection="{ attrs, item, parent, selected }">
+                      <v-chip v-bind="attrs" color="green lighten-3" :input-value="selected" label small >
+                        <span class="pr-2"> {{ item.text }} </span>
+                        <v-icon small @click="parent.selectItem(item)" >close</v-icon>
+                      </v-chip>
+                    </template>
+                  </v-combobox>
+                  <v-row v-for="s in settings.SOCIALS" :key="'social-'+s.value" >
+                    <v-col class='py-0' cols=12 sm=2>
+                      <v-subheader class="px-0 pt-4" :class="$vuetify.breakpoint.smAndUp?'float-right':''">
+                        {{s.text}}  (<a @click="show_sns_config(s)">说明</a>)
+                      </v-subheader>
+                    </v-col>
+                    <v-col class='py-0' cols=12 sm=3>
+                      <v-text-field small hide-details single-line v-model="settings['SOCIAL_AUTH_'+s.value.toUpperCase()+'_KEY']" label="Key" type="text"></v-text-field>
+                    </v-col>
+                    <v-col class='py-0' cols=12 sm=7>
+                      <v-text-field small hide-details single-line v-model="settings['SOCIAL_AUTH_'+s.value.toUpperCase()+'_SECRET']" label="Secret" type="text"></v-text-field>
+                    </v-col>
+                  </v-row>
                 </template>
 
                 <template v-if="card.show_ssl">
-                    <ssl-manager />
+                  <ssl-manager />
                 </template>
+              </div>
             </v-card-text>
+          </v-expand-transition>
         </v-card>
 
         <br/>
@@ -180,6 +184,14 @@ export default {
         },
         {
             show: false,
+            title: "书籍标签分类",
+            subtitle: '配置「分类导航」页面里预设的分类。添加书籍时，若书名或者作者名称出现以下分类，则自动添加对应的标签。',
+            fields: [
+                { icon: "person", key: "BOOK_NAV", type: 'textarea', label: "分类" },
+            ],
+        },
+        {
+            show: false,
             title: '友情链接',
             fields: [ ],
             show_friends: true,
@@ -190,7 +202,9 @@ export default {
             fields: [
                 { icon: "home", key: "static_host", label: "CDN域名" },
                 // 后续可以修改为choice下拉框选项
-                { icon: "info", key: "BOOK_NAMES_FORMAT", label: "目录和文件名模式（utf8为保留原始中文，en表示拼音英文）" },
+                { icon: "info", key: "BOOK_NAMES_FORMAT", label: "目录和文件名模式", type: 'select',
+                    items: [{text: "使用拼音字母目录名 (兼容性高)", value: "en"}, {text: "使用中文目录名 (UTF8编码，更美观)", value: "utf8"} ]
+                },
                 { icon: "info", key: "avatar_service", label: "可使用www.gravatar.com或cravatar.cn头像服务" },
                 { icon: "info", key: "MAX_UPLOAD_SIZE", label: "文件上传字节数限制(例如100MB或100KB）" },
                 { icon: "info", key: "douban_baseurl", label: "豆瓣插件API地址(例如 http://10.0.0.1:8080 )" },
