@@ -273,7 +273,7 @@ class BookDelete(BaseHandler):
         return {"err": "ok", "msg": _(u"删除成功")}
 
 class BookTrans(BaseHandler):
-
+    @js
     def get(self, id, fmt):
         if not CONF["ALLOW_GUEST_DOWNLOAD"] and not self.current_user:
                 return self.redirect("/login")
@@ -290,8 +290,8 @@ class BookTrans(BaseHandler):
                 continue
             logging.info("convert book from [%s] to format [%s]", old_path, fmt)
             ConvertService().convert_and_save(self.user_id(), book, old_path, fmt)
-            return {"err":"ok","info":"background converting"}
-        return {"err":"ok","info":"no file to convert"}
+            break
+        return {"err":"ok","info":"background converting"}
         
 
 class BookDownload(BaseHandler):
