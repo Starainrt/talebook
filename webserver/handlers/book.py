@@ -288,8 +288,8 @@ class BookTrans(BaseHandler):
             old_path = book.get("fmt_%s" % f, None)
             if not old_path:
                 continue
-            logging.info("convert book from [%s] to format [%s]", old_path, new_fmt)
-            ConvertService().convert_and_save(self.user_id(), book, old_path, new_fmt)
+            logging.info("convert book from [%s] to format [%s]", old_path, fmt)
+            ConvertService().convert_and_save(self.user_id(), book, old_path, fmt)
             return {"err":"ok","info":"background converting"}
         return {"err":"ok","info":"no file to convert"}
         
