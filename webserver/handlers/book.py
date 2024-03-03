@@ -272,25 +272,6 @@ class BookDelete(BaseHandler):
         self.add_msg("success", _(u"删除书籍《%s》") % book["title"])
         return {"err": "ok", "msg": _(u"删除成功")}
 
-def background(func):
-    @functools.wraps(func)
-    def run(*args, **kwargs):
-        def worker():
-            try:
-                func(*args, **kwargs)
-            except:
-                import logging
-                import traceback
-
-                logging.error("Failed to run background task:")
-                logging.error(traceback.format_exc())
-
-        t = threading.Thread(name="worker", target=worker)
-        t.setDaemon(True)
-        t.start()
-
-    return run
-
 class BookTrans(BaseHandler):
     def send_error_of_not_invited(self):
         self.set_header("WWW-Authenticate", "Basic")
@@ -321,22 +302,19 @@ class BookTrans(BaseHandler):
 
         return os.path.join(CONF["convert_path"], "%s.%s" % (ascii_filename(book["title"]), fmt))
 
-    @background
     def convert_format(self, book, new_fmt):
         new_path = self.get_path_of_fmt(book, new_fmt)
-        progress_file = self.get_path_progress(book["id"])
+        #progress_file = self.get_path_progress(book["id"])
 
         old_path = None
-        for f in ["txt","mobi", "azw3", "epub"]:
+        for f in ["epub", "mobi", "azw", "azw3", "txt"]:
             old_path = book.get("fmt_%s" % f, old_path)
 
         logging.debug("convert book from [%s] to [%s]", old_path, new_path)
-        ok = do_ebook_convert(old_path, new_path, progress_file)
+        ok = ConvertService().convert_and_save(self.user_id(), book, old_path, new_fmt)
         if not ok:
             self.add_msg("danger", u"文件格式转换失败，请联系管理员.")
             return None
-        with open(new_path, "rb") as f:
-            self.db.add_format(book["id"], new_fmt, f, index_is_id=True)
         return new_path
 
 class BookDownload(BaseHandler):
