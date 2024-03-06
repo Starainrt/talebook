@@ -81,9 +81,6 @@ class ConvertService(AsyncService):
     @AsyncService.register_service
     def convert_and_save(self, user_id, book, fpath, new_fmt):
 
-        if new_fmt='':
-            new_fmt = "epub"
-
         new_path = os.path.join(
             CONF["convert_path"],
             "book-%s-%s.%s" % (book["id"], int(time.time()), new_fmt),
