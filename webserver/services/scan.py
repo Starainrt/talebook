@@ -5,11 +5,11 @@ import hashlib
 import os
 import logging
 import time
-import traceback
 
 from webserver import utils
 from webserver.models import Item, ScanFile
 from webserver.services import AsyncService
+from webserver.services.autofill import AutoFillService
 
 SCAN_EXT = ["azw", "azw3", "epub", "mobi", "pdf", "txt"]
 
@@ -20,12 +20,11 @@ class ScanService(AsyncService):
             row.save()
             self.session.commit()
             bid = "[ book-id=%s ]" % row.book_id
-            logging.error("update: status=%-5s, path=%s %s", row.status, row.path, bid if row.book_id > 0 else "")
+            logging.info("update: status=%-5s, path=%s %s", row.status, row.path, bid if row.book_id > 0 else "")
             return True
         except Exception as err:
-            logging.error(traceback.format_exc())
+            logging.exception("save error: %s", err)
             self.session.rollback()
-            logging.error("save error: %s", err)
             return False
 
     def build_query(self, hashlist):
@@ -127,10 +126,15 @@ class ScanService(AsyncService):
             row.status = ScanFile.READY  # 设置为可处理
 
             # TODO calibre提供的书籍重复接口只有对比title；应当提前对整个书库的文件做哈希，才能准确去重
-            books = self.db.books_with_same_title(mi)
-            if books:
-                row.book_id = books.pop()
-                row.status = ScanFile.EXIST
+            ids = self.db.books_with_same_title(mi)
+            if ids:
+                for b in self.db.get_data_as_dict(ids=list(ids)):
+                    if fmt.upper() in b.get("available_formats", ""):
+                        row.book_id = b['id']
+                        row.status = ScanFile.EXIST
+                        break
+            if row.status == ScanFile.EXIST:
+                continue
             if not self.save_or_rollback(row):
                 continue
 
@@ -145,6 +149,8 @@ class ScanService(AsyncService):
         query.update({ScanFile.import_id: import_id}, synchronize_session=False)
         self.session.commit()
 
+        imported = []
+
         # 逐个处理
         for row in query.all():
             fpath = row.path
@@ -155,24 +161,35 @@ class ScanService(AsyncService):
                 mi.authors = [utils.super_strip(s) for s in mi.authors]
 
             # 再次检查是否有重复书籍
-            books = self.db.books_with_same_title(mi)
-            if books:
-                row.status = ScanFile.EXIST
-                row.book_id = books.pop()
+            ids = self.db.books_with_same_title(mi)
+            if ids:
+                row.book_id = ids.pop()
+                for b in self.db.get_data_as_dict(ids=ids):
+                    if fmt.upper() in b.get("available_formats", ""):
+                        row.status = ScanFile.EXIST
+                        break
+                if row.status != ScanFile.EXIST:
+                    logging.info(
+                        "import [%s] from %s with format %s", repr(mi.title), fpath, fmt)
+                    self.db.add_format(row.book_id, fmt.upper(), fpath, True)
+                    row.status = ScanFile.IMPORTED
                 self.save_or_rollback(row)
-                continue
+            else:
+                logging.info("import [%s] from %s", repr(mi.title), fpath)
+                row.book_id = self.db.import_book(mi, [fpath])
+                row.status = ScanFile.IMPORTED
+                self.save_or_rollback(row)
 
-            logging.info("import [%s] from %s", repr(mi.title), fpath)
-            row.book_id = self.db.import_book(mi, [fpath])
-            row.status = ScanFile.IMPORTED
-            self.save_or_rollback(row)
+                # 添加关联表
+                item = Item()
+                item.book_id = row.book_id
+                item.collector_id = user_id
+                try:
+                    item.save()
+                    imported.append(row.book_id)
+                except Exception as err:
+                    self.session.rollback()
+                    logging.error("save link error: %s", err)
 
-            # 添加关联表
-            item = Item()
-            item.book_id = row.book_id
-            item.collector_id = user_id
-            try:
-                item.save()
-            except Exception as err:
-                self.session.rollback()
-                logging.error("save link error: %s", err)
+        # 全部导入完毕后，开始拉取书籍信息
+        AutoFillService().auto_fill_all(imported)

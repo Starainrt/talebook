@@ -4,7 +4,6 @@
 import logging
 import threading
 from queue import Queue
-import traceback
 
 from webserver.models import Message
 
@@ -54,19 +53,19 @@ class AsyncService(metaclass=SingletonType):
         return q
 
     def loop(self, service_func, q):
-        # 在子进程中重新生成session
-        self.session = AsyncService().scoped_session()
-
+        name = service_func.__name__
         while True:
+            args, kwargs = q.get()
+            # 在子进程中重新生成session
+            self.session = AsyncService().scoped_session()
+            logging.info("create new session_id=%s", self.session.hash_key)
+            logging.info("call: func=%s, args=%s, kwargs=%s", name, args, kwargs)
             try:
-                args, kwargs = q.get()
-                logging.info("loop: func=%s, args=%s, kwargs=%s", service_func, args, kwargs)
                 service_func(self, *args, **kwargs)
-            except Exception:
-                logging.error("run task error: %s", traceback.format_exc())
-
-        # actually, it will never stop
-        # self.scoped_session.remove()
+            except Exception as err:
+                logging.exception("run task error: %s", err)
+            logging.info("end : func=%s, args=%s, kwargs=%s", name, args, kwargs)
+            self.scoped_session.remove()
 
     # 一些常用的工具库
     def add_msg(self, user_id, status, msg):
@@ -78,6 +77,19 @@ class AsyncService(metaclass=SingletonType):
     def async_mode(self):
         ''' for unittest '''
         return True
+
+    @staticmethod
+    def register_function(service_func):
+        name = service_func.__name__
+        logging.error("service register <%s>", name)
+
+        def func_wrapper(ins: AsyncService, *args, **kwargs):
+            s = AsyncService()
+            ins.setup(s.db, s.scoped_session)
+            logging.error("[FUNC ] service call %s(%s, %s)", name, args, kwargs)
+            return service_func(ins, *args, **kwargs)
+
+        return func_wrapper
 
     @staticmethod
     def register_service(service_func):
