@@ -19,7 +19,7 @@ from webserver.services.extract import ExtractService
 from webserver.services.mail import MailService
 from webserver.handlers.base import BaseHandler, ListHandler, auth, js
 from webserver.models import Item
-from webserver.plugins.meta import baike, douban
+from webserver.plugins.meta import baike, douban, youshu
 from webserver.plugins.parser.txt import get_content_encoding
 
 CONF = loader.get_settings()
@@ -112,6 +112,15 @@ class BookRefer(BaseHandler):
             return {"err": "httprequest.baidubaike.failed", "msg": _(u"百度百科查询失败")}
         if book:
             books.append(book)
+
+        api = youshu.YoushuApi(copy_image=True)
+        try:
+            book = api.get_book(title)
+        except:
+            return {"err": "httprequest.youshu.failed", "msg": _(u"优书网查询失败")}
+        if book:
+            books.append(book)
+
         return books
 
     def plugin_get_book_meta(self, provider_key, provider_value, mi):
@@ -121,7 +130,7 @@ class BookRefer(BaseHandler):
             try:
                 return api.get_book(title)
             except:
-                return {"err": "httprequest.baidubaike.failed", "msg": _(u"百度百科查询失败")}
+                raise RuntimeError({"err": "httprequest.baidubaike.failed", "msg": _(u"百度百科查询失败")})
 
         if provider_key == douban.KEY:
             mi.douban_id = provider_value
@@ -134,8 +143,16 @@ class BookRefer(BaseHandler):
             try:
                 return api.get_book(mi)
             except:
-                return {"err": "httprequest.douban.failed", "msg": _(u"豆瓣接口查询失败")}
-        return {"err": "params.provider_key.not_support", "msg": _(u"不支持该provider_key")}
+                raise RuntimeError({"err": "httprequest.douban.failed", "msg": _(u"豆瓣接口查询失败")})
+            
+        if provider_key == youshu.KEY:
+            title = re.sub(u"[(（].*", "", mi.title)
+            api = youshu.YoushuApi(copy_image=True)
+            try:
+                return api.get_book(title)
+            except:
+                raise RuntimeError({"err": "httprequest.youshu.failed", "msg": _(u"优书网查询失败")})
+        raise RuntimeError({"err": "params.provider_key.not_support", "msg": _(u"不支持该provider_key")})
 
     @js
     @auth
@@ -186,7 +203,14 @@ class BookRefer(BaseHandler):
         if not self.is_admin() and not self.is_book_owner(book_id, self.user_id()):
             return {"err": "user.no_permission", "msg": _(u"无权限")}
 
-        refer_mi = self.plugin_get_book_meta(provider_key, provider_value, mi)
+        try:
+            refer_mi = self.plugin_get_book_meta(provider_key, provider_value, mi)
+        except RuntimeError as e:
+            return e.args[0]
+
+        if not refer_mi:
+            return {"err": "plugin.fail", "msg": _(u"插件拉取信息异常，请重试")}
+
         if only_cover == "yes":
             # just set cover
             mi.cover_data = refer_mi.cover_data
@@ -454,28 +478,36 @@ class BookUpload(BaseHandler):
             mi.title = utils.super_strip(mi.title)
             mi.authors = [utils.super_strip(mi.author_sort)]
 
-        if fmt.lower() == "txt":
-            mi.title = name.replace(".txt", "")
+        # 非结构化的格式，calibre无法识别准确的信息，直接从文件名提取
+        if fmt in ["txt", "pdf"]:
+            mi.title = name.replace("." + fmt, "")
             mi.authors = [_(u"佚名")]
+
         logging.info("upload mi.title = " + repr(mi.title))
         books = self.db.books_with_same_title(mi)
         if books:
-            book_id = books.pop()
-            return {
-                "err": "samebook",
-                "msg": _(u"已存在同名书籍《%s》") % mi.title,
-                "book_id": book_id,
-            }
-
-        fpaths = [fpath]
-        book_id = self.db.import_book(mi, fpaths)
-        self.user_history("upload_history", {"id": book_id, "title": mi.title})
+            book_id = None
+            for b in self.db.get_data_as_dict(ids=books):
+                if book_id is None:
+                    book_id = b.get("id")
+                if fmt.upper() in b.get("available_formats", ""):
+                    return {
+                        "err": "samebook",
+                        "msg": _(u"同名书籍《%s》已存在这一图书格式 %s") % (mi.title, fmt),
+                        "book_id": b.get("id")
+                    }
+            logging.info(
+                "import [%s] from %s with format %s", repr(mi.title), fpath, fmt)
+            self.db.add_format(book_id, fmt.upper(), fpath, True)
+        else:
+            fpaths = [fpath]
+            book_id = self.db.import_book(mi, fpaths)
+            self.user_history("upload_history", {"id": book_id, "title": mi.title})
+            item = Item()
+            item.book_id = book_id
+            item.collector_id = self.user_id()
+            item.save()
         self.add_msg("success", _(u"导入书籍成功！"))
-        item = Item()
-        item.book_id = book_id
-        item.collector_id = self.user_id()
-        item.save()
-
         AutoFillService().auto_fill(book_id)
         return {"err": "ok", "book_id": book_id}
 
@@ -525,7 +557,7 @@ class BookRead(BaseHandler):
 
             # epub_dir is for javascript
             epub_dir = "/get/extract/%s" % book["id"]
-            return self.html_page("book/read.html", {
+            return self.html_page("book/" + CONF["EPUB_VIEWER"], {
                 "book": book,
                 "epub_dir": epub_dir,
                 "is_ready": (fmt == 'epub'),
@@ -553,6 +585,8 @@ class TxtRead(BaseHandler):
             else:
                 # 读取从起始位置到结束位置的内容
                 content = file.read(end - start)
+        if not content:
+            return {"err": "format error", "msg": "空文件"}
         encode = get_content_encoding(content)
         content = content.decode(encoding=encode, errors='ignore').replace("\r", "").replace("\n", "<br>")
         return {"err": "ok", "content": content}

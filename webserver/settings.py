@@ -13,7 +13,7 @@ settings = {
     "nuxt_env_path" : os.path.join(os.path.dirname(__file__), "../app/.env"),
     "html_path"     : os.path.join(os.path.dirname(__file__), "../app/dist"),
     "i18n_path"     : os.path.join(os.path.dirname(__file__), "i18n"),
-    "static_path"   : os.path.join(os.path.dirname(__file__), "../app/dist/static/"),
+    "static_path"   : os.path.join(os.path.dirname(__file__), "../app/dist"),
     "resource_path" : os.path.join(os.path.dirname(__file__), "resources"),
     "settings_path" : "/data/books/settings/",
     "progress_path" : "/data/books/progress/",
@@ -52,6 +52,7 @@ settings = {
     # 100MB, tornado default max_buffer_size value
     "MAX_UPLOAD_SIZE": "100MB",
 
+    "EPUB_VIEWER": "epubjs.html",
     "PDF_VIEWER": "/static/pdfjs/web/viewer.html?file=%(pdf_url)s",
 
     "SOCIAL_AUTH_LOGIN_URL"          : '/',
@@ -105,15 +106,16 @@ settings = {
     'ALLOW_GUEST_PUSH' : True,
     'ALLOW_GUEST_DOWNLOAD' : True,
     'ALLOW_REGISTER' : False,
+    'HEADER': '欢迎访问！如果你喜欢此项目，请前往 Github <a target="_blank" href="https://github.com/talebook/talebook"> 给 talebook 点击一个Star！</a>',
     'FOOTER': '本站基于Calibre构建，感谢开源界的力量。所有资源搜集于互联网，如有侵权请邮件联系。',
 
     'FRIENDS': [
-        { "text": u"芒果读书", "href": "http://diumx.com/" },
         { "text": u"鸠摩搜索", "href": "https://www.jiumodiary.com/" },
         { "text": u"追更神器", "href": "https://github.com/hectorqin/reader" },
-        { "text": u"阅读链",   "href": "https://www.yuedu.pro/" },
         { "text": u"苦瓜书盘", "href": "https://www.kgbook.com" },
-        { "text": u"三秋书屋", "href": "https://www.sanqiu.cc/" },
+        { "text": u"爱悦读", "href": "https://www.iyd.wang/" },
+        { "text": u"moe漫画", "href": "https://mox.moe/" },
+        { "text": u"雅书",   "href": "https://yabook.blog/" },
     ],
     'SOCIALS': [
     ],
